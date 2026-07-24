@@ -61,6 +61,12 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum EditorialRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id                  String    @id @default(uuid())
   name                String
@@ -94,6 +100,8 @@ model User {
   devices             Device[]
   passwordResetTokens PasswordResetToken[]
   emailVerifyTokens   EmailVerificationToken[]
+  editorialRequests   EditorialRequest[] @relation("EditorialRequestsByAuthor")
+  editorialReviews    EditorialRequest[] @relation("EditorialRequestsReviewed")
 
   @@index([email])
   @@index([role])
@@ -188,6 +196,7 @@ model Book {
   bookmarks           Bookmark[]
   highlights          Highlight[]
   orderItems          OrderItem[]
+  editorialRequests   EditorialRequest[]
 
   @@index([categoryId])
   @@index([authorId])
@@ -395,4 +404,28 @@ model AuditLog {
 
   @@index([userId])
   @@index([action])
+}
+
+// Demande éditoriale: un auteur soumet un pitch/manuscrit pour validation par un
+// éditeur/modérateur avant publication (onglet "Édition" du Dashboard Admin).
+// Distinct de Book.isPublished, qui gère la publication d'un livre déjà créé en base :
+// une demande éditoriale peut exister avant même la création formelle du livre.
+model EditorialRequest {
+  id           String                 @id @default(uuid())
+  authorId     String
+  author       User                   @relation("EditorialRequestsByAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  bookId       String?
+  book         Book?                  @relation(fields: [bookId], references: [id], onDelete: SetNull)
+  title        String
+  pitch        String
+  amountFcfa   Int                    @default(0)
+  status       EditorialRequestStatus @default(PENDING)
+  reviewerId   String?
+  reviewer     User?                  @relation("EditorialRequestsReviewed", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewNote   String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@index([authorId])
+  @@index([status])
 }

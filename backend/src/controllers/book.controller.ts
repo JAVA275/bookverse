@@ -1,7 +1,15 @@
 import { Response, NextFunction } from "express";
+import { z } from "zod";
 import { bookService } from "../services/book.service";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 import { serializeBook } from "../utils/serializeBook";
+
+const addChapterSchema = z.object({
+  title: z.string().min(1).max(300),
+  content: z.string().max(200_000).optional(),
+  durationSeconds: z.number().int().min(0).max(36_000).optional(),
+  audioUrl: z.string().url().optional(),
+});
 
 export const bookController = {
   async list(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -28,8 +36,17 @@ export const bookController = {
 
   async getById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const book = await bookService.getById(req.params.id);
-      res.json({ book: serializeBook(book) });
+      const { book, access } = await bookService.getById(req.params.id, req.user?.id, req.user?.role);
+      res.json({ book: serializeBook(book, access) });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async download(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { book, access } = await bookService.download(req.params.id, req.user?.id, req.user?.role);
+      res.json({ book: serializeBook(book, access) });
     } catch (err) {
       next(err);
     }
@@ -57,6 +74,16 @@ export const bookController = {
     try {
       const book = await bookService.publish(req.params.id, req.user!.id, req.user!.role);
       res.json({ book });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async addChapter(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const input = addChapterSchema.parse(req.body);
+      const chapter = await bookService.addChapter(req.params.id, req.user!.id, req.user!.role, input);
+      res.status(201).json({ chapter });
     } catch (err) {
       next(err);
     }

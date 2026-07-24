@@ -7,6 +7,8 @@ export const bookRouter = Router();
 
 bookRouter.get("/", optionalAuth, bookController.list);
 bookRouter.get("/:id", optionalAuth, bookController.getById);
+bookRouter.post("/:id/download", requireAuth, bookController.download);
 bookRouter.post("/", requireAuth, requireMinRole("AUTHOR"), bookController.create);
 bookRouter.patch("/:id", requireAuth, requireMinRole("AUTHOR"), bookController.update);
 bookRouter.post("/:id/publish", requireAuth, requireMinRole("MODERATOR"), bookController.publish);
+bookRouter.post("/:id/chapters", requireAuth, requireMinRole("AUTHOR"), bookController.addChapter);

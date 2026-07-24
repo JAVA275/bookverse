@@ -11,6 +11,7 @@ import { bookmarkRouter } from "./bookmark.routes";
 import { highlightRouter } from "./highlight.routes";
 import { subscriptionRouter } from "./subscription.routes";
 import { adminRouter } from "./admin.routes";
+import { editorialRequestRouter } from "./editorialRequest.routes";
 
 export const apiRouter = Router();
 
@@ -26,4 +27,5 @@ apiRouter.use("/favorites", favoriteRouter);
 apiRouter.use("/bookmarks", bookmarkRouter);
 apiRouter.use("/highlights", highlightRouter);
 apiRouter.use("/subscriptions", subscriptionRouter);
+apiRouter.use("/editorial-requests", editorialRequestRouter);
 apiRouter.use("/admin", adminRouter);

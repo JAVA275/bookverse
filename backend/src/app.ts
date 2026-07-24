@@ -12,6 +12,15 @@ import { errorHandler, notFoundHandler } from "./middlewares/error.middleware";
 
 export const app = express();
 
+// SÉCURITÉ / FIABILITÉ: Railway et Render exposent l'app derrière un reverse proxy qui
+// termine le TLS et transmet la vraie IP du client via X-Forwarded-For. Sans "trust proxy",
+// Express voit l'IP du proxy pour TOUTES les requêtes : express-rate-limit regrouperait alors
+// tous les utilisateurs dans un seul et même compteur (un attaquant peut faire bloquer tout
+// le monde, ou pire, le rate limiting sur /auth/login devient inutile car partagé). On ne
+// fait confiance qu'au premier saut (le proxy Railway/Render lui-même), jamais à un nombre
+// arbitraire de sauts, pour éviter qu'un client spoof un en-tête X-Forwarded-For.
+app.set("trust proxy", 1);
+
 app.use(helmet());
 app.use(
   cors({

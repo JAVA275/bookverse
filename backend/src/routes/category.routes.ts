@@ -1,9 +1,16 @@
 import { Router } from "express";
+import { z } from "zod";
 import { categoryRepository } from "../repositories/category.repository";
 import { requireAuth } from "../middlewares/auth.middleware";
 import { requireMinRole } from "../middlewares/rbac.middleware";
 
 export const categoryRouter = Router();
+
+const createCategorySchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  iconName: z.string().max(100).optional(),
+});
 
 categoryRouter.get("/", async (_req, res, next) => {
   try {
@@ -16,7 +23,8 @@ categoryRouter.get("/", async (_req, res, next) => {
 
 categoryRouter.post("/", requireAuth, requireMinRole("ADMIN"), async (req, res, next) => {
   try {
-    const category = await categoryRepository.create(req.body);
+    const input = createCategorySchema.parse(req.body);
+    const category = await categoryRepository.create(input);
     res.status(201).json({ category });
   } catch (err) {
     next(err);
