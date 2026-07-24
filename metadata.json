@@ -1,6 +1,0 @@
-{
-  "name": "BookVerse - Plateforme Littéraire & Édition",
-  "description": "Plateforme complète de librairie numérique, lecture d'eBooks & audiobooks, auto-édition, impression à la demande et assistance IA.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
