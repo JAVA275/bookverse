@@ -1,0 +1,29 @@
+import { Router } from "express";
+import { authRouter } from "./auth.routes";
+import { bookRouter } from "./book.routes";
+import { orderRouter } from "./order.routes";
+import { paymentRouter } from "./payment.routes";
+import { categoryRouter } from "./category.routes";
+import { geminiRouter } from "./gemini.routes";
+import { reviewRouter } from "./review.routes";
+import { favoriteRouter } from "./favorite.routes";
+import { bookmarkRouter } from "./bookmark.routes";
+import { highlightRouter } from "./highlight.routes";
+import { subscriptionRouter } from "./subscription.routes";
+import { adminRouter } from "./admin.routes";
+
+export const apiRouter = Router();
+
+apiRouter.get("/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
+apiRouter.use("/auth", authRouter);
+apiRouter.use("/categories", categoryRouter);
+apiRouter.use("/books", bookRouter);
+apiRouter.use("/orders", orderRouter);
+apiRouter.use("/payments", paymentRouter);
+apiRouter.use("/gemini", geminiRouter);
+apiRouter.use("/reviews", reviewRouter);
+apiRouter.use("/favorites", favoriteRouter);
+apiRouter.use("/bookmarks", bookmarkRouter);
+apiRouter.use("/highlights", highlightRouter);
+apiRouter.use("/subscriptions", subscriptionRouter);
+apiRouter.use("/admin", adminRouter);

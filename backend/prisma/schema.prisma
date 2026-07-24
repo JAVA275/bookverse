@@ -1,0 +1,398 @@
+// BookVerse - Schéma Prisma (PostgreSQL)
+// Couvre les priorités 1 (DB), 2 (architecture), 3 (lecture), 6 (rôles/admin),
+// 7 (librairie), 14 (abonnements), 21 (tables coeur).
+// NB: les modules IA / Elasticsearch / DRM avancé ne sont PAS dans ce schéma :
+// ils demandent des services externes distincts, voir README > "Non inclus".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MODERATOR
+  AUTHOR
+  PUBLISHER
+  READER_PREMIUM
+  READER
+}
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
+  PREMIUM_PLUS
+}
+
+enum BookFormat {
+  EBOOK
+  AUDIO
+  PHYSICAL
+  BUNDLE
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  PREPARING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentProvider {
+  ORANGE_MONEY
+  MTN_MOMO
+  STRIPE
+  PAYPAL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  name                String
+  email               String    @unique
+  passwordHash        String
+  role                UserRole  @default(READER)
+  avatar              String?
+  phone               String?
+  country             String?
+  bio                 String?
+  subscriptionTier    SubscriptionTier @default(FREE)
+  walletBalanceFcfa   Int       @default(0)
+  emailVerifiedAt     DateTime?
+  weeklyReadsCount    Int       @default(0)
+  totalReadsCount     Int       @default(0)
+  isBanned            Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  refreshTokens       RefreshToken[]
+  books               Book[]           @relation("AuthorBooks")
+  reviews             Review[]
+  favorites           Favorite[]
+  readingHistory      ReadingHistory[]
+  bookmarks           Bookmark[]
+  highlights          Highlight[]
+  orders              Order[]
+  subscriptions       Subscription[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  devices             Device[]
+  passwordResetTokens PasswordResetToken[]
+  emailVerifyTokens   EmailVerificationToken[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId  String?
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model Device {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent    String?
+  lastIp       String?
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Category {
+  id          String @id @default(uuid())
+  name        String @unique
+  description String?
+  iconName    String?
+  books       Book[]
+}
+
+model Book {
+  id                  String     @id @default(uuid())
+  title               String
+  subtitle            String?
+  authorId            String
+  author              User       @relation("AuthorBooks", fields: [authorId], references: [id])
+  publisher            String?
+  categoryId          String?
+  category            Category?  @relation(fields: [categoryId], references: [id])
+  description         String
+  coverUrl            String?
+  priceEbookFcfa      Int        @default(0)
+  pricePhysicalFcfa   Int        @default(0)
+  priceAudioFcfa      Int        @default(0)
+  isFreeWithSubscription Boolean @default(false)
+  pages               Int        @default(0)
+  isbn                String?    @unique
+  language            String     @default("fr")
+  stockPhysical       Int        @default(0)
+  downloadsCount      Int        @default(0)
+  salesCount          Int        @default(0)
+  featured            Boolean    @default(false)
+  bestseller          Boolean    @default(false)
+  isNewRelease        Boolean    @default(false)
+  isPublished         Boolean    @default(false)
+  publishDate         DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  chapters            Chapter[]
+  reviews             Review[]
+  favorites           Favorite[]
+  readingHistory      ReadingHistory[]
+  bookmarks           Bookmark[]
+  highlights          Highlight[]
+  orderItems          OrderItem[]
+
+  @@index([categoryId])
+  @@index([authorId])
+  @@index([title])
+}
+
+model Chapter {
+  id              String  @id @default(uuid())
+  bookId          String
+  book            Book    @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  number          Int
+  title           String
+  content         String?
+  audioUrl        String?
+  durationSeconds Int?
+
+  @@unique([bookId, number])
+  @@index([bookId])
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  bookId    String
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String?
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([bookId, userId])
+  @@index([bookId])
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookId    String
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, bookId])
+}
+
+model ReadingHistory {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookId         String
+  book           Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  lastPage       Int      @default(0)
+  progressPct    Float    @default(0)
+  lastReadAt     DateTime @default(now())
+
+  @@unique([userId, bookId])
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookId    String
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  page      Int
+  label     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, bookId])
+}
+
+model Highlight {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookId       String
+  book         Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapterNumber Int
+  pageNumber   Int
+  selectedText String
+  noteText     String?
+  color        String   @default("#FFD700")
+  createdAt    DateTime @default(now())
+
+  @@index([userId, bookId])
+}
+
+model SubscriptionPlan {
+  id             SubscriptionTier @id
+  name           String
+  priceMonthlyFcfa Int
+  priceYearlyFcfa  Int
+  features       String[]
+  isActive       Boolean @default(true)
+
+  subscriptions  Subscription[]
+}
+
+model Subscription {
+  id           String            @id @default(uuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId       SubscriptionTier
+  plan         SubscriptionPlan  @relation(fields: [planId], references: [id])
+  status       String            @default("active") // active | canceled | expired
+  startedAt    DateTime          @default(now())
+  currentPeriodEnd DateTime
+  cancelAtPeriodEnd Boolean      @default(false)
+  createdAt    DateTime          @default(now())
+
+  @@index([userId])
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
+  totalAmountFcfa Int
+  status          OrderStatus @default(PENDING)
+  deliveryAddress String?
+  trackingNumber  String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  items           OrderItem[]
+  payments        Payment[]
+  invoice         Invoice?
+
+  @@index([userId])
+}
+
+model OrderItem {
+  id        String     @id @default(uuid())
+  orderId   String
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bookId    String
+  book      Book       @relation(fields: [bookId], references: [id])
+  format    BookFormat
+  unitPriceFcfa Int
+  quantity  Int        @default(1)
+
+  @@index([orderId])
+}
+
+model Payment {
+  id             String          @id @default(uuid())
+  orderId        String
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider       PaymentProvider
+  providerRef    String?         // ID transaction chez Stripe/PayPal/OM/MoMo
+  amountFcfa     Int
+  status         PaymentStatus   @default(PENDING)
+  rawPayload     Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([orderId])
+  @@index([providerRef])
+}
+
+model Invoice {
+  id        String   @id @default(uuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  number    String   @unique
+  pdfUrl    String?
+  createdAt DateTime @default(now())
+}
+
+model Coupon {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  percentOff   Int?
+  amountOffFcfa Int?
+  maxRedemptions Int?
+  redeemedCount  Int    @default(0)
+  expiresAt    DateTime?
+  isActive     Boolean  @default(true)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String   @default("info")
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String?
+  entityId  String?
+  ip        String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+}
