@@ -20,7 +20,6 @@ const SubscriptionsView = lazy(() => import('./components/SubscriptionsView').th
 const PublishingStudio = lazy(() => import('./components/PublishingStudio').then(m => ({ default: m.PublishingStudio })));
 const AuthorDashboard = lazy(() => import('./components/AuthorDashboard').then(m => ({ default: m.AuthorDashboard })));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
-const CommunityView = lazy(() => import('./components/CommunityView').then(m => ({ default: m.CommunityView })));
 const UserLibraryView = lazy(() => import('./components/UserLibraryView').then(m => ({ default: m.UserLibraryView })));
 
 function MainContent() {
@@ -37,7 +36,6 @@ function MainContent() {
     handleStartReading,
     handleStartListening,
     handleSubscribe,
-    handleRoleChange,
   } = useAuth();
 
   const {
@@ -65,32 +63,11 @@ function MainContent() {
   const [profileModalOpen, setProfileModalOpen] = useState<boolean>(false);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
 
-  const handleAddAuthor = (authorData: { name: string; email: string; phone: string; country: string }) => {
-    setCurrentUser({
-      id: `usr_author_${Date.now()}`,
-      name: authorData.name,
-      email: authorData.email,
-      role: 'author',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-      subscriptionTier: 'free',
-      publishedBooksCount: 0,
-      walletBalance: 0,
-      phone: authorData.phone,
-      country: authorData.country,
-      bio: 'Auteur publié par la maison d’édition BookVerse Africa.',
-      myLibraryBookIds: [],
-      myAudiobookIds: [],
-      bookmarkedPageByBookId: {},
-    });
-    setActiveTab('author_dashboard');
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors font-sans antialiased">
       {/* Platform Header */}
       <Header
         currentUser={currentUser}
-        onRoleChange={handleRoleChange}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         cartCount={cartItems.reduce((acc, cur) => acc + cur.quantity, 0)}
@@ -144,14 +121,6 @@ function MainContent() {
             />
           )}
 
-          {activeTab === 'community' && (
-            <CommunityView
-              currentUser={currentUser}
-              books={books}
-              onSelectBook={(bk) => setSelectedBook(bk)}
-            />
-          )}
-
           {activeTab === 'author_dashboard' && (
             <AuthorDashboard
               currentUser={currentUser}
@@ -169,7 +138,6 @@ function MainContent() {
               categories={categories}
               onAddCategory={addCategory}
               onDeleteCategory={deleteCategory}
-              onAddAuthor={handleAddAuthor}
             />
           )}
         </Suspense>

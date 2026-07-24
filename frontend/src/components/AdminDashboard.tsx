@@ -61,13 +61,32 @@ interface AdminPendingBook {
   authorName: string;
 }
 
+interface AdminTransactionRow {
+  id: string;
+  amountFcfa: number;
+  provider: string;
+  status: string;
+  createdAt: string;
+  order: { id: string; user: { id: string; name: string; email: string } };
+}
+
+interface AdminEditorialRequestRow {
+  id: string;
+  title: string;
+  pitch: string;
+  amountFcfa: number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  createdAt: string;
+  author: { id: string; name: string; email: string };
+  book: { id: string; title: string } | null;
+}
+
 interface AdminDashboardProps {
   currentUser: UserProfile;
   books: Book[];
   categories: BookCategory[];
-  onAddCategory: (newCat: BookCategory) => void;
-  onDeleteCategory: (id: string) => void;
-  onAddAuthor: (author: { name: string; email: string; phone: string; country: string }) => void;
+  onAddCategory: (newCat: { name: string; description?: string; iconName?: string }) => Promise<void>;
+  onDeleteCategory: (id: string) => Promise<void>;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -76,7 +95,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   categories,
   onAddCategory,
   onDeleteCategory,
-  onAddAuthor,
 }) => {
   const [activeTab, setActiveTab] = useState<'admin_finances' | 'categories' | 'create_author' | 'editorial_publisher' | 'author_royalties' | 'users_orders' | 'moderation'>('admin_finances');
 
@@ -85,6 +103,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [adminUsers, setAdminUsers] = useState<AdminUserRow[]>([]);
   const [adminOrders, setAdminOrders] = useState<AdminOrderRow[]>([]);
   const [pendingBooks, setPendingBooks] = useState<AdminPendingBook[]>([]);
+  const [transactions, setTransactions] = useState<AdminTransactionRow[]>([]);
+  const [editorialRequests, setEditorialRequests] = useState<AdminEditorialRequestRow[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -138,9 +158,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   }, []);
 
+  const fetchTransactions = useCallback(async () => {
+    setAdminLoading(true);
+    setAdminError(null);
+    try {
+      const { transactions: txs } = await api.get<{ transactions: AdminTransactionRow[] }>('/admin/transactions');
+      setTransactions(txs);
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : 'Impossible de charger les transactions.');
+    } finally {
+      setAdminLoading(false);
+    }
+  }, []);
+
+  const fetchEditorialRequests = useCallback(async () => {
+    setAdminLoading(true);
+    setAdminError(null);
+    try {
+      const { requests } = await api.get<{ requests: AdminEditorialRequestRow[] }>('/admin/editorial-requests');
+      setEditorialRequests(requests);
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : 'Impossible de charger les demandes éditoriales.');
+    } finally {
+      setAdminLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAdminStats();
-  }, [fetchAdminStats]);
+    fetchEditorialRequests();
+  }, [fetchAdminStats, fetchEditorialRequests]);
 
   useEffect(() => {
     if (activeTab === 'users_orders') {
@@ -149,6 +196,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     if (activeTab === 'moderation') {
       fetchPendingBooks();
+    }
+    if (activeTab === 'admin_finances') {
+      fetchTransactions();
+    }
+    if (activeTab === 'editorial_publisher') {
+      fetchEditorialRequests();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
@@ -185,111 +238,73 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [authorPhone, setAuthorPhone] = useState('');
   const [authorCountry, setAuthorCountry] = useState('Sénégal');
   const [authorSuccess, setAuthorSuccess] = useState(false);
+  const [authorTempPassword, setAuthorTempPassword] = useState<string | null>(null);
+  const [authorFormError, setAuthorFormError] = useState<string | null>(null);
 
   const totalPlatformBooks = adminStats?.booksCount ?? books.length;
   const totalSubscribers = adminStats?.usersCount ?? 14250;
   const totalPlatformRevenue = adminStats?.totalRevenueFcfa ?? 48500000; // FCFA
 
-  // Pending Manuscript Editorial Submission Requests
-  const [editorialRequests, setEditorialRequests] = useState([
-    {
-      id: 'req_01',
-      authorName: 'Dr. Mariam Ba Diallo',
-      bookTitle: 'Entreprendre en Afrique : Le Guide Disruptif',
-      serviceRequested: 'Attribution ISBN & Dépôt Légal',
-      status: 'en_attente',
-      date: '2026-02-12',
-      amount: 20000,
-    },
-    {
-      id: 'req_02',
-      authorName: 'Aïcha Diop',
-      bookTitle: 'Les Légendes d’Afrique : Contes du Soir',
-      serviceRequested: 'Mise en page & Maquette Intérieure',
-      status: 'en_cours',
-      date: '2026-02-10',
-      amount: 35000,
-    },
-    {
-      id: 'req_03',
-      authorName: 'Ousmane Traoré',
-      bookTitle: 'L’Énigme de Timbuktu',
-      serviceRequested: 'Correction & Relecture Professionnelle',
-      status: 'en_attente',
-      date: '2026-02-09',
-      amount: 45000,
-    },
-  ]);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
-  const transactions = [
-    {
-      id: 'tx_101',
-      user: 'Fatou Sow',
-      amount: 5000,
-      method: 'Orange Money Senegal',
-      type: 'Abonnement Lecteur Illimité',
-      date: '2026-02-12 10:14',
-      status: 'succes',
-    },
-    {
-      id: 'tx_102',
-      user: 'Koffi Mensah',
-      amount: 50000,
-      method: 'MTN MoMo Côte d’Ivoire',
-      type: 'Abonnement Annuel (50 000 FCFA)',
-      date: '2026-02-12 09:45',
-      status: 'succes',
-    },
-    {
-      id: 'tx_103',
-      user: 'Amadou Koné',
-      amount: 145000,
-      method: 'Visa / Mastercard',
-      type: 'Impression POD (200 ex.)',
-      date: '2026-02-11 16:20',
-      status: 'succes',
-    },
-  ];
-
-  const handleCreateCategorySubmit = (e: React.FormEvent) => {
+  const handleCreateCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!catName.trim()) return;
 
-    onAddCategory({
-      id: `cat_${Date.now()}`,
-      name: catName.trim(),
-      description: catDescription.trim() || 'Catégorie officielle créée par l’Admin.',
-      bookCount: 0,
-    });
-
-    setCatName('');
-    setCatDescription('');
-    setCatSuccess(true);
-    setTimeout(() => setCatSuccess(false), 2500);
+    setCategoryError(null);
+    try {
+      await onAddCategory({
+        name: catName.trim(),
+        description: catDescription.trim() || 'Catégorie officielle créée par l’Admin.',
+      });
+      setCatName('');
+      setCatDescription('');
+      setCatSuccess(true);
+      setTimeout(() => setCatSuccess(false), 2500);
+    } catch (err) {
+      setCategoryError(err instanceof Error ? err.message : 'Échec de la création de la catégorie.');
+    }
   };
 
-  const handleCreateAuthorSubmit = (e: React.FormEvent) => {
+  const handleCreateAuthorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authorName.trim() || !authorEmail.trim()) return;
 
-    onAddAuthor({
-      name: authorName.trim(),
-      email: authorEmail.trim(),
-      phone: authorPhone.trim() || '+221 77 000 00 00',
-      country: authorCountry.trim() || 'Sénégal',
-    });
+    setAuthorFormError(null);
+    try {
+      const { tempPassword } = await api.post<{ tempPassword: string }>('/admin/authors', {
+        name: authorName.trim(),
+        email: authorEmail.trim(),
+        phone: authorPhone.trim() || undefined,
+        country: authorCountry.trim() || undefined,
+      });
 
-    setAuthorName('');
-    setAuthorEmail('');
-    setAuthorPhone('');
-    setAuthorSuccess(true);
-    setTimeout(() => setAuthorSuccess(false), 3000);
+      setAuthorName('');
+      setAuthorEmail('');
+      setAuthorPhone('');
+      setAuthorTempPassword(tempPassword);
+      setAuthorSuccess(true);
+    } catch (err) {
+      setAuthorFormError(err instanceof Error ? err.message : 'Échec de la création du compte auteur.');
+    }
   };
 
-  const handleApproveRequest = (id: string) => {
-    setEditorialRequests((prev) =>
-      prev.map((req) => (req.id === id ? { ...req, status: 'valide' } : req))
-    );
+  const handleApproveRequest = async (id: string) => {
+    try {
+      await api.patch(`/admin/editorial-requests/${id}`, { status: 'APPROVED' });
+      setEditorialRequests((prev) => prev.filter((req) => req.id !== id));
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : 'Échec de la validation de la demande.');
+    }
+  };
+
+  const handleRejectRequest = async (id: string) => {
+    try {
+      await api.patch(`/admin/editorial-requests/${id}`, { status: 'REJECTED' });
+      setEditorialRequests((prev) => prev.filter((req) => req.id !== id));
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : 'Échec du rejet de la demande.');
+    }
   };
 
   return (
@@ -422,7 +437,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="bento-card p-6 space-y-2">
               <span className="text-xs font-bold text-slate-400 uppercase">Projets Éditoriaux</span>
               <p className="text-2xl font-black font-mono text-white">
-                18 en cours
+                {editorialRequests.length} en cours
               </p>
               <p className="text-[10px] text-indigo-400 font-bold">Mise en page & ISBN</p>
             </div>
@@ -449,21 +464,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <tbody className="divide-y divide-slate-800/60 text-xs text-slate-200">
                   {transactions.map((tx) => (
                     <tr key={tx.id} className="hover:bg-slate-900/50 transition">
-                      <td className="py-3 px-4 font-bold text-white">{tx.user}</td>
-                      <td className="py-3 px-4 text-slate-300">{tx.type}</td>
-                      <td className="py-3 px-4 font-medium text-amber-400">{tx.method}</td>
+                      <td className="py-3 px-4 font-bold text-white">{tx.order.user.name}</td>
+                      <td className="py-3 px-4 text-slate-300">Commande #{tx.order.id.slice(0, 8)}</td>
+                      <td className="py-3 px-4 font-medium text-amber-400">{tx.provider.replace('_', ' ')}</td>
                       <td className="py-3 px-4 font-mono font-bold text-white">
-                        {tx.amount.toLocaleString('fr-FR')} FCFA
+                        {tx.amountFcfa.toLocaleString('fr-FR')} FCFA
                       </td>
-                      <td className="py-3 px-4 text-slate-400 font-mono">{tx.date}</td>
+                      <td className="py-3 px-4 text-slate-400 font-mono">
+                        {new Date(tx.createdAt).toLocaleString('fr-FR')}
+                      </td>
                       <td className="py-3 px-4">
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30 flex items-center space-x-1 w-fit">
-                          <CheckCircle className="w-3 h-3" />
-                          <span>Validé</span>
-                        </span>
+                        {tx.status === 'SUCCEEDED' ? (
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30 flex items-center space-x-1 w-fit">
+                            <CheckCircle className="w-3 h-3" />
+                            <span>Validé</span>
+                          </span>
+                        ) : tx.status === 'FAILED' ? (
+                          <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-400 text-[10px] font-bold border border-rose-500/30 flex items-center space-x-1 w-fit">
+                            <AlertCircle className="w-3 h-3" />
+                            <span>Échoué</span>
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold border border-amber-500/30 flex items-center space-x-1 w-fit">
+                            <Clock className="w-3 h-3" />
+                            <span>En attente</span>
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
+                  {transactions.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-6 px-4 text-center text-slate-500">
+                        Aucune transaction pour le moment.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -488,6 +524,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center space-x-2">
                 <Check className="w-4 h-4" />
                 <span>Nouvelle catégorie ajoutée avec succès !</span>
+              </div>
+            )}
+
+            {categoryError && (
+              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4" />
+                <span>{categoryError}</span>
               </div>
             )}
 
@@ -538,7 +581,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-sm text-white font-serif">{cat.name}</h4>
                     <button
-                      onClick={() => onDeleteCategory(cat.id)}
+                      onClick={() =>
+                        onDeleteCategory(cat.id).catch((err) =>
+                          setCategoryError(err instanceof Error ? err.message : 'Échec de la suppression.')
+                        )
+                      }
                       className="text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition cursor-pointer"
                       title="Supprimer la catégorie"
                     >
@@ -570,12 +617,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           {authorSuccess && (
-            <div className="p-4 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center space-x-3">
-              <CheckCircle className="w-5 h-5 text-emerald-400" />
-              <div>
-                <p className="font-bold text-white">Compte Auteur créé avec succès !</p>
-                <p className="text-[11px] font-normal text-emerald-300">L'auteur peut désormais publier jusqu'à 3 livres gratuitement.</p>
+            <div className="p-4 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold space-y-2">
+              <div className="flex items-center space-x-3">
+                <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                <div>
+                  <p className="font-bold text-white">Compte Auteur créé avec succès !</p>
+                  <p className="text-[11px] font-normal text-emerald-300">L'auteur peut désormais publier jusqu'à 3 livres gratuitement.</p>
+                </div>
               </div>
+              {authorTempPassword && (
+                <div className="ml-8 p-3 rounded-lg bg-slate-950/60 border border-emerald-500/20">
+                  <p className="text-[11px] font-normal text-slate-300">
+                    Mot de passe temporaire à transmettre à l'auteur par un canal sûr (il ne sera plus affiché) :
+                  </p>
+                  <p className="font-mono text-sm text-white mt-1 select-all">{authorTempPassword}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {authorFormError && (
+            <div className="p-4 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center space-x-3">
+              <AlertCircle className="w-5 h-5 text-rose-400" />
+              <span>{authorFormError}</span>
             </div>
           )}
 
@@ -676,16 +740,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <tbody className="divide-y divide-slate-800/60 text-xs text-slate-200">
                   {editorialRequests.map((req) => (
                     <tr key={req.id} className="hover:bg-slate-900/50 transition">
-                      <td className="py-3 px-4 font-bold text-white">{req.authorName}</td>
-                      <td className="py-3 px-4 text-slate-300 font-serif italic">{req.bookTitle}</td>
-                      <td className="py-3 px-4 text-indigo-300 font-medium">{req.serviceRequested}</td>
+                      <td className="py-3 px-4 font-bold text-white">{req.author.name}</td>
+                      <td className="py-3 px-4 text-slate-300 font-serif italic">{req.book?.title ?? req.title}</td>
+                      <td className="py-3 px-4 text-indigo-300 font-medium">{req.pitch}</td>
                       <td className="py-3 px-4 font-mono font-bold text-emerald-400">
-                        {req.amount.toLocaleString('fr-FR')} FCFA
+                        {req.amountFcfa.toLocaleString('fr-FR')} FCFA
                       </td>
                       <td className="py-3 px-4">
-                        {req.status === 'valide' ? (
+                        {req.status === 'APPROVED' ? (
                           <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
                             Validé
+                          </span>
+                        ) : req.status === 'REJECTED' ? (
+                          <span className="px-2.5 py-1 rounded-full bg-slate-500/20 text-slate-400 text-[10px] font-bold border border-slate-500/30">
+                            Rejeté
                           </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-400 text-[10px] font-bold border border-rose-500/30">
@@ -693,18 +761,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-right">
-                        {req.status !== 'valide' && (
-                          <button
-                            onClick={() => handleApproveRequest(req.id)}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-[11px] transition cursor-pointer"
-                          >
-                            Approuver
-                          </button>
+                      <td className="py-3 px-4 text-right space-x-2">
+                        {req.status === 'PENDING' && (
+                          <>
+                            <button
+                              onClick={() => handleApproveRequest(req.id)}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-[11px] transition cursor-pointer"
+                            >
+                              Approuver
+                            </button>
+                            <button
+                              onClick={() => handleRejectRequest(req.id)}
+                              className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-[11px] transition cursor-pointer border border-rose-500/30"
+                            >
+                              Rejeter
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>
                   ))}
+                  {editorialRequests.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-6 px-4 text-center text-slate-500">
+                        Aucune demande éditoriale en attente.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

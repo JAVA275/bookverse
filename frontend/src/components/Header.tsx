@@ -20,7 +20,6 @@ import { UserRole, UserProfile } from '../types';
 
 interface HeaderProps {
   currentUser: UserProfile;
-  onRoleChange: (role: UserRole) => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   cartCount: number;
@@ -35,7 +34,6 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   currentUser,
-  onRoleChange,
   activeTab,
   setActiveTab,
   cartCount,
@@ -138,17 +136,6 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Auto-Édition & POD</span>
             </button>
 
-            <button
-              onClick={() => setActiveTab('community')}
-              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer ${
-                activeTab === 'community'
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-semibold'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/50'
-              }`}
-            >
-              Communauté
-            </button>
-
             {/* Dashboard shortcut for non-readers */}
             {currentUser.role !== 'reader' && (
               <button
@@ -172,34 +159,10 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Actions: Role Switcher, Cart, Dark Mode */}
           <div className="flex items-center space-x-3">
-            {/* Role Switcher Pill */}
-            <div className="relative group">
-              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-700 text-xs font-medium text-slate-200 cursor-pointer hover:border-slate-600 transition">
-                <span className={`w-2 h-2 rounded-full ${roleLabels[currentUser.role].color}`}></span>
-                <span>Rôle: {roleLabels[currentUser.role].label}</span>
-              </div>
-              <div className="absolute right-0 top-full mt-2 w-48 bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 py-2 hidden group-hover:block z-50">
-                <div className="px-3 py-1 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Changer de vue
-                </div>
-                {(['reader', 'author', 'admin'] as UserRole[]).map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => {
-                      onRoleChange(r);
-                      if (r === 'author') setActiveTab('author_dashboard');
-                      else if (r === 'admin') setActiveTab('admin_dashboard');
-                      else setActiveTab('store');
-                    }}
-                    className={`w-full text-left px-3 py-2 text-xs flex items-center space-x-2 hover:bg-slate-800 cursor-pointer ${
-                      currentUser.role === r ? 'font-bold text-emerald-400' : 'text-slate-300'
-                    }`}
-                  >
-                    {roleLabels[r].icon}
-                    <span>{roleLabels[r].label}</span>
-                  </button>
-                ))}
-              </div>
+            {/* Rôle actuel (lecture seule — le rôle est déterminé par le backend, il ne se "simule" plus côté client) */}
+            <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-700 text-xs font-medium text-slate-200">
+              <span className={`w-2 h-2 rounded-full ${roleLabels[currentUser.role].color}`}></span>
+              <span>Rôle: {roleLabels[currentUser.role].label}</span>
             </div>
 
             {/* Dark Mode toggle */}

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { CartItem, UserProfile, BookFormat } from '../types';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 interface CartCheckoutModalProps {
   items: CartItem[];
@@ -48,6 +49,7 @@ export const CartCheckoutModal: React.FC<CartCheckoutModalProps> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const { refreshLibrary } = useAuth();
 
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -113,6 +115,7 @@ export const CartCheckoutModal: React.FC<CartCheckoutModalProps> = ({
 
       setStep('success');
       onClearCart();
+      await refreshLibrary();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue pendant le paiement.');
     } finally {

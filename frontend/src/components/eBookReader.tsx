@@ -50,8 +50,8 @@ export const EBookReader: React.FC<EBookReaderProps> = ({ book, onClose }) => {
   const [speechRate, setSpeechRate] = useState<number>(1.0);
 
   // Bookmarks & Notes
-  const [isBookmarked, setIsBookmarked] = useState<boolean>(false);
-  const [bookmarks, setBookmarks] = useState<number[]>([12, 45]);
+  const [bookmarks, setBookmarks] = useState<{ id: string; page: number }[]>([]);
+  const isBookmarked = bookmarks.some((b) => b.page === currentPage);
   const [selectedText, setSelectedText] = useState<string>('');
   const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState<boolean>(false);
@@ -110,13 +110,43 @@ export const EBookReader: React.FC<EBookReaderProps> = ({ book, onClose }) => {
     }
   };
 
-  const toggleBookmarkCurrentPage = () => {
-    if (isBookmarked) {
-      setBookmarks((prev) => prev.filter((p) => p !== currentPage));
-      setIsBookmarked(false);
+  // Charge les vrais signets du livre depuis l'API (GET /bookmarks/mine?bookId=) au lieu
+  // de partir d'une liste mockée en dur ([12, 45]).
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ bookmarks: { id: string; page: number }[] }>(`/bookmarks/mine?bookId=${book.id}`)
+      .then(({ bookmarks: apiBookmarks }) => {
+        if (!cancelled) setBookmarks(apiBookmarks.map((b) => ({ id: b.id, page: b.page })));
+      })
+      .catch(() => {
+        if (!cancelled) setBookmarks([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [book.id]);
+
+  const toggleBookmarkCurrentPage = async () => {
+    const existing = bookmarks.find((b) => b.page === currentPage);
+    if (existing) {
+      setBookmarks((prev) => prev.filter((b) => b.id !== existing.id));
+      try {
+        await api.delete(`/bookmarks/${existing.id}`);
+      } catch {
+        // En cas d'échec, on remet le signet pour ne pas désynchroniser l'UI du serveur.
+        setBookmarks((prev) => [...prev, existing]);
+      }
     } else {
-      setBookmarks((prev) => [...prev, currentPage]);
-      setIsBookmarked(true);
+      try {
+        const { bookmark } = await api.post<{ bookmark: { id: string; page: number } }>('/bookmarks', {
+          bookId: book.id,
+          page: currentPage,
+        });
+        setBookmarks((prev) => [...prev, { id: bookmark.id, page: bookmark.page }]);
+      } catch {
+        // Échec silencieux: le signet ne sera simplement pas ajouté.
+      }
     }
   };
 
@@ -175,7 +205,7 @@ export const EBookReader: React.FC<EBookReaderProps> = ({ book, onClose }) => {
         </div>
 
         {/* Reader Display Controls */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 overflow-x-auto scrollbar-none">
           {/* TTS Audio Voice Button */}
           <button
             onClick={toggleTTS}
@@ -191,7 +221,7 @@ export const EBookReader: React.FC<EBookReaderProps> = ({ book, onClose }) => {
           </button>
 
           {/* Theme switcher */}
-          <div className="flex items-center p-1 rounded-lg bg-black/5 dark:bg-white/10 space-x-1">
+          <div className="hidden sm:flex items-center p-1 rounded-lg bg-black/5 dark:bg-white/10 space-x-1">
             <button
               onClick={() => setThemeMode('clair')}
               className={`px-2 py-1 rounded text-xs font-bold transition cursor-pointer ${
@@ -303,8 +333,16 @@ export const EBookReader: React.FC<EBookReaderProps> = ({ book, onClose }) => {
         </main>
 
         {/* Sidebar: Chapters, Search, Notes & AI Assistant Drawer */}
+        {/* RESPONSIVE: sur mobile, ce panneau devient un overlay plein écran (il n'y a pas la
+            place pour l'afficher à côté du texte comme sur desktop) ; à partir de `sm:`, il
+            redevient un panneau latéral fixe de 320px comme avant. */}
         {sidebarOpen && (
-          <aside className="w-80 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 overflow-y-auto space-y-6 shadow-xl">
+          <>
+            <div
+              className="absolute inset-0 z-10 bg-slate-950/60 sm:hidden"
+              onClick={() => setSidebarOpen(false)}
+            />
+            <aside className="absolute inset-y-0 right-0 z-20 w-full sm:static sm:w-80 sm:z-auto border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 overflow-y-auto space-y-6 shadow-xl">
             {/* In-Book Search Input */}
             <div className="space-y-2">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
@@ -359,13 +397,13 @@ export const EBookReader: React.FC<EBookReaderProps> = ({ book, onClose }) => {
                 Mes Marque-Pages ({bookmarks.length})
               </h3>
               <div className="flex flex-wrap gap-2">
-                {bookmarks.map((p) => (
+                {bookmarks.map((b) => (
                   <button
-                    key={p}
-                    onClick={() => setCurrentPage(p)}
+                    key={b.id}
+                    onClick={() => setCurrentPage(b.page)}
                     className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-500 border border-amber-500/30 text-xs font-bold hover:bg-amber-500/30 cursor-pointer"
                   >
-                    Page {p}
+                    Page {b.page}
                   </button>
                 ))}
               </div>
@@ -403,6 +441,7 @@ export const EBookReader: React.FC<EBookReaderProps> = ({ book, onClose }) => {
               )}
             </div>
           </aside>
+          </>
         )}
       </div>
 

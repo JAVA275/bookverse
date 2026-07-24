@@ -1,17 +1,38 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Book, BookCategory } from '../types';
-import { MOCK_BOOKS, DEFAULT_CATEGORIES } from '../data/mockData';
+import { api } from '../services/api';
+
+// Payload envoyé par le formulaire "Publier un livre" de l'auteur — ce n'est PAS un Book
+// complet : les champs calculés/contrôlés côté serveur (isPublished, rating, salesCount,
+// downloadsCount, dates...) ne sont jamais fournis par le client (voir book.service.ts
+// côté backend, qui les ignore de toute façon même si on les envoyait).
+export interface NewBookInput {
+  title: string;
+  subtitle?: string;
+  description: string;
+  coverUrl: string;
+  priceEbookFcfa: number;
+  pricePhysicalFcfa: number;
+  priceAudioFcfa: number;
+  isbn?: string;
+  language: string;
+  pages: number;
+  categoryId?: string;
+}
 
 interface BookContextType {
   books: Book[];
   categories: BookCategory[];
+  booksLoading: boolean;
+  booksError: string | null;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   selectedCategory: string;
   setSelectedCategory: (cat: string) => void;
-  addBook: (newBook: Book) => void;
-  addCategory: (newCat: BookCategory) => void;
-  deleteCategory: (id: string) => void;
+  addBook: (input: NewBookInput) => Promise<Book>;
+  addCategory: (newCat: { name: string; description?: string; iconName?: string }) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
+  refreshBooks: () => Promise<void>;
   selectedBook: Book | null;
   setSelectedBook: (book: Book | null) => void;
 }
@@ -19,61 +40,61 @@ interface BookContextType {
 const BookContext = createContext<BookContextType | undefined>(undefined);
 
 export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [books, setBooks] = useState<Book[]>(MOCK_BOOKS);
-  const [categories, setCategories] = useState<BookCategory[]>(DEFAULT_CATEGORIES);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [categories, setCategories] = useState<BookCategory[]>([]);
+  const [booksLoading, setBooksLoading] = useState(true);
+  const [booksError, setBooksError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
 
-  // Sync books & categories from server
-  useEffect(() => {
-    fetch('/api/books')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.books && Array.isArray(data.books)) {
-          setBooks((prev) => {
-            const existingIds = new Set(data.books.map((b: Book) => b.id));
-            const localOnly = prev.filter((b) => !existingIds.has(b.id));
-            return [...data.books, ...localOnly];
-          });
-        }
-      })
-      .catch((err) => console.log('Using local book cache:', err));
-
-    fetch('/api/categories')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.categories && Array.isArray(data.categories)) {
-          setCategories(data.categories);
-        }
-      })
-      .catch((err) => console.log('Using default categories:', err));
+  // Charge le vrai catalogue depuis l'API. NB: /api/books est paginé côté serveur
+  // (20 par page par défaut) ; on demande ici la taille de page maximale (100) pour
+  // afficher tout le catalogue publié dans le magasin sans construire une pagination
+  // dédiée — à revoir si le catalogue dépasse 100 titres.
+  const refreshBooks = useCallback(async () => {
+    setBooksLoading(true);
+    setBooksError(null);
+    try {
+      const { books: apiBooks } = await api.get<{ books: Book[] }>('/books?pageSize=100');
+      setBooks(apiBooks);
+    } catch (err) {
+      setBooksError(err instanceof Error ? err.message : 'Impossible de charger le catalogue.');
+    } finally {
+      setBooksLoading(false);
+    }
   }, []);
 
-  const addBook = (newBook: Book) => {
-    setBooks((prev) => [newBook, ...prev]);
-    // Optionally push to backend
-    fetch('/api/books', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newBook),
-    }).catch((err) => console.error('Failed to sync book to server:', err));
+  const refreshCategories = useCallback(async () => {
+    try {
+      const { categories: apiCategories } = await api.get<{ categories: BookCategory[] }>('/categories');
+      setCategories(apiCategories);
+    } catch {
+      setCategories([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshBooks();
+    refreshCategories();
+  }, [refreshBooks, refreshCategories]);
+
+  const addBook = async (input: NewBookInput) => {
+    const { book } = await api.post<{ book: Book }>('/books', input);
+    // Le livre créé est un brouillon (isPublished: false) tant qu'un modérateur ne l'a pas
+    // validé — voir POST /books/:id/publish et l'onglet "Modération" du Dashboard Admin.
+    setBooks((prev) => [book, ...prev]);
+    return book;
   };
 
-  const addCategory = (newCat: BookCategory) => {
-    setCategories((prev) => [...prev, newCat]);
-    fetch('/api/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newCat),
-    }).catch((err) => console.error('Failed to sync category:', err));
+  const addCategory = async (newCat: { name: string; description?: string; iconName?: string }) => {
+    const { category } = await api.post<{ category: BookCategory }>('/categories', newCat);
+    setCategories((prev) => [...prev, category]);
   };
 
-  const deleteCategory = (id: string) => {
+  const deleteCategory = async (id: string) => {
+    await api.delete(`/categories/${id}`);
     setCategories((prev) => prev.filter((c) => c.id !== id));
-    fetch(`/api/categories/${id}`, { method: 'DELETE' }).catch((err) =>
-      console.error('Failed to delete category:', err)
-    );
   };
 
   return (
@@ -81,6 +102,8 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         books,
         categories,
+        booksLoading,
+        booksError,
         searchQuery,
         setSearchQuery,
         selectedCategory,
@@ -88,6 +111,7 @@ export const BookProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addBook,
         addCategory,
         deleteCategory,
+        refreshBooks,
         selectedBook,
         setSelectedBook,
       }}

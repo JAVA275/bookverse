@@ -15,12 +15,14 @@ import {
   Crown
 } from 'lucide-react';
 import { Book, BookCategory, UserProfile } from '../types';
+import { NewBookInput } from '../context/BookContext';
+import { api } from '../services/api';
 
 interface AuthorDashboardProps {
   currentUser: UserProfile;
   books: Book[];
   categories: BookCategory[];
-  onPublishBook: (newBook: Book) => void;
+  onPublishBook: (input: NewBookInput) => Promise<Book>;
   onOpenQuotaModal: (type: 'author_limit') => void;
 }
 
@@ -41,7 +43,7 @@ export const AuthorDashboard: React.FC<AuthorDashboardProps> = ({
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
-  const [category, setCategory] = useState(categories[0]?.name || 'Roman & Fiction');
+  const [category, setCategory] = useState(categories[0]?.id || '');
   const [description, setDescription] = useState('');
   const [coverUrl, setCoverUrl] = useState('https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80');
   const [priceEbook, setPriceEbook] = useState(2500);
@@ -49,6 +51,8 @@ export const AuthorDashboard: React.FC<AuthorDashboardProps> = ({
   const [priceAudio, setPriceAudio] = useState(3000);
   const [sampleText, setSampleText] = useState('');
   const [publishedSuccess, setPublishedSuccess] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
 
   const handleOpenPublishModal = () => {
     // Check Author Free Quota (3 books max)
@@ -59,56 +63,53 @@ export const AuthorDashboard: React.FC<AuthorDashboardProps> = ({
     setPublishModalOpen(true);
   };
 
-  const handlePublishSubmit = (e: React.FormEvent) => {
+  const handlePublishSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || publishing) return;
 
-    const newBook: Book = {
-      id: `book_${Date.now()}`,
-      title: title.trim(),
-      subtitle: subtitle.trim() || undefined,
-      authorId: currentUser.id,
-      authorName: currentUser.name,
-      publisher: 'Auto-Édition BookVerse',
-      category: category,
-      description: description.trim() || 'Ouvrage publié sur BookVerse Africa.',
-      coverUrl: coverUrl.trim() || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80',
-      priceEbook: Number(priceEbook) || 2000,
-      pricePhysical: Number(pricePhysical) || 5000,
-      priceAudio: Number(priceAudio) || 2500,
-      isFreeWithSubscription: true,
-      rating: 5.0,
-      reviewsCount: 1,
-      pages: 180,
-      audioDuration: '5h 30m',
-      sampleText: sampleText.trim() || 'Extrait de la première édition...',
-      chapters: [
-        {
-          id: `c_${Date.now()}_1`,
-          number: 1,
-          title: 'Chapitre 1 : Introduction & Prologue',
-          content: sampleText.trim() || 'Chapitre d’ouverture de l’ouvrage...',
-        },
-      ],
-      publishDate: new Date().toISOString().split('T')[0],
-      isbn: `978-2-401-${Math.floor(1000 + Math.random() * 9000)}-1`,
-      language: 'Français',
-      stockPhysical: 50,
-      downloadsCount: 0,
-      salesCount: 0,
-      isNewRelease: true,
-    };
+    setPublishError(null);
+    setPublishing(true);
+    try {
+      const input: NewBookInput = {
+        title: title.trim(),
+        subtitle: subtitle.trim() || undefined,
+        description: description.trim() || 'Ouvrage publié sur BookVerse Africa.',
+        coverUrl:
+          coverUrl.trim() ||
+          'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80',
+        priceEbookFcfa: Number(priceEbook) || 2000,
+        pricePhysicalFcfa: Number(pricePhysical) || 5000,
+        priceAudioFcfa: Number(priceAudio) || 2500,
+        language: 'fr',
+        pages: 0,
+        categoryId: category || undefined,
+      };
 
-    onPublishBook(newBook);
-    setPublishedSuccess(true);
-    setTimeout(() => {
-      setPublishedSuccess(false);
-      setPublishModalOpen(false);
-      setTitle('');
-      setSubtitle('');
-      setDescription('');
-      setSampleText('');
-    }, 1500);
+      const createdBook = await onPublishBook(input);
+
+      // Le livre est créé sans contenu (Chapter est un modèle séparé) : on ajoute tout de
+      // suite un premier chapitre avec l'extrait fourni, sinon le livre reste illisible.
+      await api.post(`/books/${createdBook.id}/chapters`, {
+        title: 'Chapitre 1 : Introduction & Prologue',
+        content: sampleText.trim() || 'Chapitre d’ouverture de l’ouvrage...',
+      });
+
+      setPublishedSuccess(true);
+      setTimeout(() => {
+        setPublishedSuccess(false);
+        setPublishModalOpen(false);
+        setTitle('');
+        setSubtitle('');
+        setDescription('');
+        setSampleText('');
+      }, 1500);
+    } catch (err) {
+      setPublishError(
+        err instanceof Error ? err.message : 'Échec de la publication du livre. Réessayez.'
+      );
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
@@ -265,11 +266,19 @@ export const AuthorDashboard: React.FC<AuthorDashboardProps> = ({
                 <div className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto">
                   <Check className="w-8 h-8" />
                 </div>
-                <h4 className="text-lg font-bold font-serif text-white">Ouvrage Publié avec Succès !</h4>
-                <p className="text-xs text-slate-300">Votre livre est maintenant en vente sur la librairie BookVerse.</p>
+                <h4 className="text-lg font-bold font-serif text-white">Ouvrage envoyé pour validation !</h4>
+                <p className="text-xs text-slate-300">
+                  Votre livre est enregistré en tant que brouillon et sera visible dans la
+                  librairie dès qu'un modérateur l'aura validé.
+                </p>
               </div>
             ) : (
               <form onSubmit={handlePublishSubmit} className="space-y-4">
+                {publishError && (
+                  <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-rose-300 text-xs font-medium">
+                    {publishError}
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-300">Titre du livre *</label>
@@ -306,7 +315,7 @@ export const AuthorDashboard: React.FC<AuthorDashboardProps> = ({
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:border-emerald-500 focus:outline-none"
                   >
                     {categories.map((cat) => (
-                      <option key={cat.id} value={cat.name}>
+                      <option key={cat.id} value={cat.id}>
                         {cat.name} ({cat.description})
                       </option>
                     ))}
@@ -388,9 +397,10 @@ export const AuthorDashboard: React.FC<AuthorDashboardProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs shadow-lg transition cursor-pointer"
+                    disabled={publishing}
+                    className="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs shadow-lg transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Publier le Livre
+                    {publishing ? 'Publication...' : 'Publier le Livre'}
                   </button>
                 </div>
               </form>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   Headphones,
@@ -41,7 +41,28 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('Tous');
   const [selectedFormat, setSelectedFormat] = useState<string>('Tous');
   const [sortBy, setSortBy] = useState<'popular' | 'rating' | 'newest' | 'price_asc'>('popular');
-  const [favoriteBookIds, setFavoriteBookIds] = useState<string[]>(['book_1']);
+  const [favoriteBookIds, setFavoriteBookIds] = useState<string[]>([]);
+
+  // Charge les vrais favoris de l'utilisateur connecté depuis l'API (GET /favorites/mine)
+  // au lieu de partir d'une liste mockée en dur.
+  useEffect(() => {
+    if (currentUser.id === 'guest') {
+      setFavoriteBookIds([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ favorites: { book: { id: string } }[] }>('/favorites/mine')
+      .then(({ favorites }) => {
+        if (!cancelled) setFavoriteBookIds(favorites.map((f) => f.book.id));
+      })
+      .catch(() => {
+        // Utilisateur non authentifié ou erreur réseau : on reste sur une liste vide.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id]);
   
   // AI Recommendation State
   const [aiPrompt, setAiPrompt] = useState<string>('');
@@ -60,9 +81,18 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
 
   const toggleFavorite = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setFavoriteBookIds((prev) =>
-      prev.includes(id) ? prev.filter((bId) => bId !== id) : [...prev, id]
-    );
+    if (currentUser.id === 'guest') return;
+
+    const wasFavorite = favoriteBookIds.includes(id);
+    // Mise à jour optimiste immédiate, avec retour arrière si l'appel API échoue.
+    setFavoriteBookIds((prev) => (wasFavorite ? prev.filter((bId) => bId !== id) : [...prev, id]));
+
+    const request = wasFavorite ? api.delete(`/favorites/${id}`) : api.post('/favorites', { bookId: id });
+    request.catch(() => {
+      setFavoriteBookIds((prev) =>
+        wasFavorite ? [...prev, id] : prev.filter((bId) => bId !== id)
+      );
+    });
   };
 
   const filteredBooks = books

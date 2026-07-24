@@ -37,8 +37,8 @@ interface AuthContextType {
   setActiveListeningBook: (book: Book | null) => void;
   handleStartReading: (book: Book) => void;
   handleStartListening: (book: Book) => void;
-  handleSubscribe: (tier: SubscriptionTier) => void;
-  handleRoleChange: (role: 'reader' | 'author' | 'admin') => void;
+  handleSubscribe: (tier: SubscriptionTier) => Promise<void>;
+  refreshLibrary: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -53,6 +53,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeReadingBook, setActiveReadingBook] = useState<Book | null>(null);
   const [activeListeningBook, setActiveListeningBook] = useState<Book | null>(null);
 
+  // La bibliothèque (livres/audiobooks possédés) vient des vraies commandes payées
+  // (GET /orders/mine) — avant cette fonction, myLibraryBookIds/myAudiobookIds restaient
+  // toujours vides ou recopiés de l'état précédent, donc "Ma Bibliothèque" ne reflétait
+  // jamais les achats réels d'un utilisateur.
+  const loadLibraryFromOrders = async () => {
+    try {
+      const { orders } = await api.get<{ orders: any[] }>('/orders/mine');
+      const ebookIds = new Set<string>();
+      const audioIds = new Set<string>();
+      for (const order of orders) {
+        if (order.status !== 'PAID') continue;
+        for (const item of order.items ?? []) {
+          if (item.format === 'AUDIO') audioIds.add(item.bookId);
+          else ebookIds.add(item.bookId);
+        }
+      }
+      setCurrentUser((prev) =>
+        prev
+          ? { ...prev, myLibraryBookIds: Array.from(ebookIds), myAudiobookIds: Array.from(audioIds) }
+          : prev
+      );
+    } catch {
+      // Pas grave si ça échoue (ex: hors ligne) : la bibliothèque reste simplement vide.
+    }
+  };
+
   // Au chargement: si un access token existe déjà (ou qu'un refresh cookie est valide),
   // on tente de récupérer le profil courant pour restaurer la session.
   useEffect(() => {
@@ -66,6 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { user } = await api.get<{ user: any }>('/auth/me');
         setCurrentUser(mapApiUserToProfile(user));
         setIsAuthenticated(true);
+        await loadLibraryFromOrders();
       } catch {
         setCurrentUser(GUEST_USER);
         setIsAuthenticated(false);
@@ -88,6 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const profile = mapApiUserToProfile(user);
       setCurrentUser(profile);
       setIsAuthenticated(true);
+      await loadLibraryFromOrders();
       return profile;
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Échec de la connexion');
@@ -182,17 +210,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveListeningBook(book);
   };
 
-  const handleSubscribe = (tier: SubscriptionTier) => {
-    // TODO: brancher sur POST /api/subscriptions une fois cette route ajoutée
-    // (voir README > "Prochaines étapes"). Pour l'instant mise à jour optimiste locale.
-    setCurrentUser((prev) => (prev ? { ...prev, subscriptionTier: tier } : prev));
-    setQuotaModalType(null);
-  };
-
-  const handleRoleChange = (_role: 'reader' | 'author' | 'admin') => {
-    // Conservé pour compatibilité UI, mais le rôle réel vient désormais du backend
-    // (RBAC). Un changement de rôle doit passer par un admin côté API.
-    console.warn('handleRoleChange: le rôle est géré par le backend, cette action est un no-op.');
+  const handleSubscribe = async (tier: SubscriptionTier) => {
+    const planId = tier.toUpperCase() as 'FREE' | 'PREMIUM' | 'PREMIUM_PLUS';
+    try {
+      const { subscription } = await api.post<{ subscription: { planId: string } }>('/subscriptions', {
+        planId,
+      });
+      setCurrentUser((prev) =>
+        prev ? { ...prev, subscriptionTier: subscription.planId.toLowerCase() as SubscriptionTier } : prev
+      );
+      setQuotaModalType(null);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Échec de l'abonnement.");
+      throw err;
+    }
   };
 
   return (
@@ -215,7 +246,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         handleStartReading,
         handleStartListening,
         handleSubscribe,
-        handleRoleChange,
+        refreshLibrary: loadLibraryFromOrders,
       }}
     >
       {children}

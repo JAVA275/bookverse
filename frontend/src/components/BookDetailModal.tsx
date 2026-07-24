@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Star,
@@ -16,7 +16,6 @@ import {
   Bot
 } from 'lucide-react';
 import { Book, BookFormat, BookReview, UserProfile } from '../types';
-import { MOCK_REVIEWS } from '../data/mockData';
 import { api } from '../services/api';
 
 interface BookDetailModalProps {
@@ -55,9 +54,42 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   const [chatLoading, setChatLoading] = useState<boolean>(false);
 
   // Reviews State
-  const [reviews, setReviews] = useState<BookReview[]>(
-    MOCK_REVIEWS.filter((r) => r.bookId === book.id)
-  );
+  const [reviews, setReviews] = useState<BookReview[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  // Charge les vrais avis du livre depuis l'API (GET /reviews?bookId=) au lieu de
+  // partir des données mockées MOCK_REVIEWS.
+  useEffect(() => {
+    let cancelled = false;
+    setReviewsLoading(true);
+    api
+      .get<{ reviews: any[] }>(`/reviews?bookId=${book.id}`)
+      .then(({ reviews: apiReviews }) => {
+        if (cancelled) return;
+        setReviews(
+          apiReviews.map((r) => ({
+            id: r.id,
+            bookId: r.bookId,
+            userId: r.userId,
+            userName: r.user?.name ?? 'Utilisateur',
+            userAvatar: r.user?.avatar ?? '',
+            rating: r.rating,
+            comment: r.comment ?? '',
+            date: (r.createdAt ?? '').slice(0, 10),
+            likes: 0,
+          }))
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setReviews([]);
+      })
+      .finally(() => {
+        if (!cancelled) setReviewsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [book.id]);
   const [newComment, setNewComment] = useState<string>('');
   const [newRating, setNewRating] = useState<number>(5);
 
@@ -105,24 +137,37 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
     }
   };
 
-  const handleAddReview = (e: React.FormEvent) => {
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
 
-    const rev: BookReview = {
-      id: `rev_${Date.now()}`,
-      bookId: book.id,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userAvatar: currentUser.avatar,
-      rating: newRating,
-      comment: newComment,
-      date: new Date().toISOString().split('T')[0],
-      likes: 0,
-    };
-
-    setReviews([rev, ...reviews]);
-    setNewComment('');
+    setReviewError(null);
+    try {
+      const { review } = await api.post<{ review: any }>('/reviews', {
+        bookId: book.id,
+        rating: newRating,
+        comment: newComment,
+      });
+      setReviews((prev) => [
+        {
+          id: review.id,
+          bookId: review.bookId,
+          userId: review.userId,
+          userName: currentUser.name,
+          userAvatar: currentUser.avatar,
+          rating: review.rating,
+          comment: review.comment ?? '',
+          date: (review.createdAt ?? new Date().toISOString()).slice(0, 10),
+          likes: 0,
+        },
+        ...prev,
+      ]);
+      setNewComment('');
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Échec de l'envoi de l'avis.");
+    }
   };
 
   return (
@@ -347,6 +392,9 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                     <h4 className="text-xs font-bold text-white uppercase tracking-wider">
                       Laisser votre avis de lecteur
                     </h4>
+                    {reviewError && (
+                      <p className="text-xs font-medium text-rose-400">{reviewError}</p>
+                    )}
                     <div className="flex items-center space-x-2">
                       <span className="text-xs text-slate-400">Note :</span>
                       {[1, 2, 3, 4, 5].map((s) => (
@@ -381,6 +429,14 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
                   {/* Reviews List */}
                   <div className="space-y-3">
+                    {reviewsLoading && (
+                      <p className="text-xs text-slate-500 text-center py-4">Chargement des avis...</p>
+                    )}
+                    {!reviewsLoading && reviews.length === 0 && (
+                      <p className="text-xs text-slate-500 text-center py-4">
+                        Aucun avis pour ce livre pour le moment. Soyez le premier à en laisser un !
+                      </p>
+                    )}
                     {reviews.map((rev) => (
                       <div key={rev.id} className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
                         <div className="flex items-center justify-between">

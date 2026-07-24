@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Crown,
   CheckCircle2,
@@ -9,35 +9,84 @@ import {
   ShieldCheck,
   Check
 } from 'lucide-react';
-import { SUBSCRIPTION_PLANS } from '../data/mockData';
+import { api } from '../services/api';
 import { SubscriptionPlan, SubscriptionTier, UserProfile } from '../types';
+
+// Champs purement visuels (badge/couleur/mise en avant) qui n'existent pas dans le modèle
+// SubscriptionPlan côté backend — seuls nom/prix/fonctionnalités viennent de l'API réelle
+// (GET /subscriptions/plans) ; ce lookup ne fait qu'habiller ces vraies données.
+const PLAN_DISPLAY: Record<string, { badge: string; color: string; popular?: boolean }> = {
+  FREE: { badge: 'Standard', color: 'bg-slate-100 text-slate-800 border-slate-200' },
+  PREMIUM: {
+    badge: 'Le plus populaire',
+    color: 'bg-emerald-500 text-slate-950 border-emerald-600',
+    popular: true,
+  },
+  PREMIUM_PLUS: { badge: 'Expérience Ultime', color: 'bg-indigo-600 text-white border-indigo-700' },
+};
+
+const TIER_TO_FRONTEND: Record<string, SubscriptionTier> = {
+  FREE: 'free',
+  PREMIUM: 'premium',
+  PREMIUM_PLUS: 'premium_plus',
+};
 
 interface SubscriptionsViewProps {
   currentUser: UserProfile;
-  onUpdateSubscription: (tier: SubscriptionTier) => void;
+  onUpdateSubscription: (tier: SubscriptionTier) => Promise<void>;
 }
 
 export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
   currentUser,
   onUpdateSubscription,
 }) => {
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [paymentMethod, setPaymentMethod] = useState<'orange_money' | 'mtn_momo' | 'card'>('orange_money');
   const [phoneNumber, setPhoneNumber] = useState<string>(currentUser.phone || '');
   const [paymentSuccess, setPaymentSuccess] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
-  const handleSubscribe = (e: React.FormEvent) => {
+  // Charge la vraie grille tarifaire depuis l'API (GET /subscriptions/plans, public) au lieu
+  // des plans mockés en dur — les prix/fonctionnalités reflètent maintenant la vraie base.
+  useEffect(() => {
+    api
+      .get<{ plans: any[] }>('/subscriptions/plans')
+      .then(({ plans: apiPlans }) => {
+        setPlans(
+          apiPlans.map((p) => ({
+            id: TIER_TO_FRONTEND[p.id] ?? 'free',
+            name: p.name,
+            priceMonthly: p.priceMonthlyFcfa,
+            priceYearly: p.priceYearlyFcfa,
+            features: p.features ?? [],
+            badge: PLAN_DISPLAY[p.id]?.badge ?? '',
+            popular: PLAN_DISPLAY[p.id]?.popular,
+            color: PLAN_DISPLAY[p.id]?.color ?? 'bg-slate-100 text-slate-800 border-slate-200',
+          }))
+        );
+      })
+      .catch(() => setPlans([]))
+      .finally(() => setPlansLoading(false));
+  }, []);
+
+  const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlan) return;
 
     setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
+    setSubscribeError(null);
+    try {
+      await onUpdateSubscription(selectedPlan.id);
       setPaymentSuccess(true);
-      onUpdateSubscription(selectedPlan.id);
-    }, 2000);
+    } catch (err) {
+      setSubscribeError(err instanceof Error ? err.message : "Échec de l'abonnement. Réessayez.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -85,7 +134,15 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
 
       {/* Subscription Tier Bento Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {SUBSCRIPTION_PLANS.map((plan) => {
+        {plansLoading && (
+          <p className="col-span-full text-center text-sm text-slate-400">Chargement des formules...</p>
+        )}
+        {!plansLoading && plans.length === 0 && (
+          <p className="col-span-full text-center text-sm text-slate-400">
+            Impossible de charger les formules d'abonnement pour le moment.
+          </p>
+        )}
+        {plans.map((plan) => {
           const isCurrentPlan = currentUser.subscriptionTier === plan.id;
           const price =
             billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
@@ -278,6 +335,10 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                       />
                     </div>
                   </div>
+                )}
+
+                {subscribeError && (
+                  <p className="text-xs font-bold text-rose-400 text-center">{subscribeError}</p>
                 )}
 
                 <button
