@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import crypto from "crypto";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { adminRepository } from "../repositories/admin.repository";
 import { userRepository } from "../repositories/user.repository";
 import { requireAuth, AuthenticatedRequest } from "../middlewares/auth.middleware";

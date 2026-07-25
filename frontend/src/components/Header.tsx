@@ -268,12 +268,6 @@ export const Header: React.FC<HeaderProps> = ({
           >
             Offres d'Abonnement
           </button>
-          <button
-            onClick={() => { setActiveTab('community'); setMobileMenuOpen(false); }}
-            className="w-full text-left px-3 py-2 text-sm font-medium rounded-xl text-slate-300 hover:bg-slate-900"
-          >
-            Clubs de Lecture & Avis
-          </button>
 
           {currentUser.role !== 'reader' && (
             <button

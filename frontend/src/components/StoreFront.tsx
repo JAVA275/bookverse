@@ -21,6 +21,7 @@ import { api } from '../services/api';
 
 interface StoreFrontProps {
   books: Book[];
+  booksLoading?: boolean;
   onSelectBook: (book: Book) => void;
   onAddToCart: (book: Book, format: BookFormat) => void;
   currentUser: UserProfile;
@@ -31,6 +32,7 @@ interface StoreFrontProps {
 
 export const StoreFront: React.FC<StoreFrontProps> = ({
   books,
+  booksLoading,
   onSelectBook,
   onAddToCart,
   currentUser,
@@ -145,6 +147,30 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
       setAiLoading(false);
     }
   };
+
+  // GARDE-FOU: tant que le vrai catalogue n'a pas fini de charger (ou s'il est vide/en
+  // échec), `books` est un tableau vide et `featuredBook` serait `undefined` — accéder à
+  // `featuredBook.coverUrl` plus bas plantait tout le composant (écran blanc). On affiche
+  // un état de chargement/vide au lieu de laisser le reste du rendu s'exécuter.
+  if (booksLoading && books.length === 0) {
+    return (
+      <div className="space-y-8 pb-16">
+        <div className="p-16 text-center text-slate-400 font-mono text-xs animate-pulse">
+          Chargement du catalogue BookVerse...
+        </div>
+      </div>
+    );
+  }
+
+  if (!featuredBook) {
+    return (
+      <div className="space-y-8 pb-16">
+        <div className="p-16 text-center text-slate-400 text-sm">
+          Aucun livre disponible pour le moment. Revenez bientôt !
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-16">

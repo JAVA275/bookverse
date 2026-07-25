@@ -50,6 +50,7 @@ function MainContent() {
   const {
     books,
     categories,
+    booksLoading,
     searchQuery,
     setSearchQuery,
     addBook,
@@ -92,6 +93,7 @@ function MainContent() {
           {activeTab === 'store' && (
             <StoreFront
               books={books}
+              booksLoading={booksLoading}
               onSelectBook={(bk) => setSelectedBook(bk)}
               onAddToCart={addToCart}
               currentUser={currentUser}
